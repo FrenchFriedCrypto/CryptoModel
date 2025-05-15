@@ -1,166 +1,206 @@
 import os
+import time
+import numpy as np
 import pandas as pd
-import numpy as np  # for drawdowns and Sharpe
 
 # ========== CONFIGURATION (EDIT THIS SECTION ONLY) ==========
+TIMEFRAME    = "1H"           # timeframe suffix on your Data/*.csv files
+DATA_DIR     = "../Data"      # folder containing SYMBOL_TIMEFRAME.csv
+RESULTS_FILE = "results_comparison.csv"
 
-# 🚀 TARGET COIN to trade (this is the coin you'll generate BUY/SELL/HOLD for)
-TARGET_COIN = "LDO"       # Example: "LDO", "BONK", "RAY"
-TIMEFRAME   = "1H"        # Timeframe of your strategy: "1H", "4H", "1D"
-
-# 🧭 ANCHOR COINS used to derive signals
+# Anchor definitions & rules
 ANCHORS = [
     {"symbol": "BTC", "timeframe": "1H", "lag": 4},
     {"symbol": "ETH", "timeframe": "1H", "lag": 4},
-    {"symbol": "ETH", "timeframe": "4H", "lag": 0}
+    {"symbol": "SOL", "timeframe": "1H", "lag": 4},
+    {"symbol": "ETH", "timeframe": "4H", "lag": 0},
 ]
 
-# ✅ BUY RULES
+# Base BUY rules (we’ll override change_pct in the loop)
 BUY_RULES = [
-    {"symbol": "BTC", "timeframe": "1H", "lag": 4, "change_pct": 3.0, "direction": "up"},
-    {"symbol": "ETH", "timeframe": "1H", "lag": 4, "change_pct": 5.0, "direction": "up"}
+    {"symbol": "BTC", "timeframe": "1H", "lag": 4, "change_pct": -10.0, "direction": "down"},
+    {"symbol": "ETH", "timeframe": "1H", "lag": 4, "change_pct": -10.0, "direction": "down"},
+    {"symbol": "SOL", "timeframe": "1H", "lag": 4, "change_pct": -10.0, "direction": "down"},
 ]
 
-# ❌ SELL RULES
+# SELL rules remain fixed
 SELL_RULES = [
-    {"symbol": "ETH", "timeframe": "4H", "lag": 0, "change_pct": -3.0, "direction": "down"}
+    {"symbol": "ETH", "timeframe": "1H", "lag": 0, "change_pct": -2.0, "direction": "down"},
 ]
+
 
 # ========== STRATEGY ENGINE (DO NOT EDIT BELOW) ==========
 
-def generate_signals(candles_target: pd.DataFrame, candles_anchor: pd.DataFrame) -> pd.DataFrame:
-    df = candles_target[['timestamp']].copy()
-    for a in ANCHORS:
-        col = f"close_{a['symbol']}_{a['timeframe']}"
-        df[col] = candles_anchor[col].values
-
-    signals = []
-    for i in range(len(df)):
-        buy_pass = True
-        sell_pass = False
-
-        # BUY rules
-        for r in BUY_RULES:
-            col = f"close_{r['symbol']}_{r['timeframe']}"
-            change = df[col].pct_change().shift(r['lag']).iloc[i]
-            if pd.isna(change) or (r['direction']=='up'   and change<= r['change_pct']/100) \
-                              or (r['direction']=='down' and change>= r['change_pct']/100):
-                buy_pass = False
-                break
-
-        # SELL rules
-        for r in SELL_RULES:
-            col = f"close_{r['symbol']}_{r['timeframe']}"
-            change = df[col].pct_change().shift(r['lag']).iloc[i]
-            if not pd.isna(change):
-                if (r['direction']=='down' and change<= r['change_pct']/100) \
-                or  (r['direction']=='up'   and change>= r['change_pct']/100):
-                    sell_pass = True
-
-        signals.append("BUY" if buy_pass else "SELL" if sell_pass else "HOLD")
-
-    return pd.DataFrame({'timestamp': df['timestamp'], 'signal': signals})
-
-
-def get_coin_metadata() -> dict:
-    return {
-        "target": {"symbol": TARGET_COIN, "timeframe": TIMEFRAME},
-        "anchors": [{"symbol": a["symbol"], "timeframe": a["timeframe"]} for a in ANCHORS]
-    }
-
-
 def load_candles(symbol: str, timeframe: str) -> pd.DataFrame:
-    df = pd.read_csv(f"Data/{symbol}_{timeframe}.csv")
+    """Load OHLC CSV and parse timestamp."""
+    fn = os.path.join(DATA_DIR, f"{symbol}_{timeframe}.csv")
+    df = pd.read_csv(fn)
     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
     return df
 
+def generate_signals(df_anc: pd.DataFrame,
+                     buy_rules: list,
+                     sell_rules: list,
+                     pct_dict: dict) -> pd.DataFrame:
+    """Vector-indexed signal generator using precomputed pct changes."""
+    ts = df_anc['timestamp'].to_numpy()
+    n  = len(df_anc)
+    signals = []
 
-# ─── Load data ──────────────────────────────────────────────────────────────────
-meta       = get_coin_metadata()
-df_target  = load_candles(meta['target']['symbol'], meta['target']['timeframe'])
+    for i in range(n):
+        buy_ok, sell_ok = True, False
 
-df_anchor = pd.DataFrame({'timestamp': df_target['timestamp']})
-for a in meta['anchors']:
-    df = load_candles(a['symbol'], a['timeframe'])
-    col = f"close_{a['symbol']}_{a['timeframe']}"
-    df_anchor = df_anchor.merge(
-        df[['timestamp', 'close']].rename(columns={'close': col}),
-        on='timestamp', how='left'
-    )
+        # BUY: all buy_rules must pass
+        for r in buy_rules:
+            key    = (r['symbol'], r['timeframe'], r['lag'])
+            change = pct_dict[key][i]
+            if pd.isna(change):
+                buy_ok = False
+                break
+            thresh = r['change_pct'] / 100
+            if ((r['direction']=="up"   and change <=  thresh) or
+                (r['direction']=="down" and change >=  thresh)):
+                buy_ok = False
+                break
 
-signals = generate_signals(df_target, df_anchor)
-df = df_target.merge(signals, on='timestamp', how='left').fillna({'signal':'HOLD'})
+        # SELL: any sell_rule passes
+        for r in sell_rules:
+            key    = (r['symbol'], r['timeframe'], r['lag'])
+            change = pct_dict[key][i]
+            if pd.isna(change):
+                continue
+            thresh = r['change_pct'] / 100
+            if ((r['direction']=="down" and change <= thresh) or
+                (r['direction']=="up"   and change >= thresh)):
+                sell_ok = True
 
+        if buy_ok:
+            signals.append("BUY")
+        elif sell_ok:
+            signals.append("SELL")
+        else:
+            signals.append("HOLD")
 
-# ─── Backtest ─────────────────────────────────────────────────────────────────
-initial_cash  = 10_000.0
-cash          = initial_cash
-position      = 0.0
-equity_curve  = []
-trades        = []
-
-for _, row in df.iterrows():
-    sig   = row['signal']
-    price = row['open']
-
-    if sig == 'BUY' and position == 0:
-        position = cash / price
-        cash     = 0.0
-        trades.append({'type':'BUY',  'time':row['timestamp'], 'price':price})
-
-    elif sig == 'SELL' and position > 0:
-        cash     = position * price
-        trades.append({'type':'SELL', 'time':row['timestamp'], 'price':price})
-        position = 0.0
-
-    # record equity each bar
-    equity = cash + position * price
-    equity_curve.append(equity)
-
-# exit any open at the end
-if position > 0:
-    final_price = df.iloc[-1]['close']
-    cash       = position * final_price
-    trades.append({'type':'EXIT', 'time':df.iloc[-1]['timestamp'], 'price':final_price})
-    position   = 0.0
-    equity_curve[-1] = cash  # overwrite last bar to reflect exit
+    return pd.DataFrame({"timestamp": ts, "signal": signals})
 
 
-# ─── Performance ───────────────────────────────────────────────────────────────
-# Total return & basic stats
-total_return = (cash - initial_cash) / initial_cash * 100
-num_trades   = len(trades) // 2
-wins         = sum(1 for i in range(1, len(trades), 2)
-                   if trades[i]['price'] > trades[i-1]['price'])
-win_rate     = wins / num_trades * 100 if num_trades else 0
+# === MAIN LOOP ===
 
-# Max drawdown
-eq       = np.array(equity_curve)
-running_max   = np.maximum.accumulate(eq)
-drawdowns     = (running_max - eq) / running_max
-max_drawdown  = np.max(drawdowns) * 100
+start_time = time.time()
 
-# Sharpe ratio (assumes zero risk-free)
-# compute period returns
-rets = np.diff(eq) / eq[:-1]
-# annualize factor based on timeframe
-if TIMEFRAME.endswith('H'):
-    hrs = int(TIMEFRAME[:-1])
-    periods_per_year = 365 * 24 / hrs
-elif TIMEFRAME.endswith('D'):
-    days = int(TIMEFRAME[:-1])
-    periods_per_year = 365 / days
-else:
-    periods_per_year = 252  # fallback
+# find all target symbols in DATA_DIR
+# symbols = [
+#     f[:-len(f"_{TIMEFRAME}.csv")]
+#     for f in os.listdir(DATA_DIR)
+#     if f.endswith(f"_{TIMEFRAME}.csv")
+# ]
 
-sharpe_ratio = (np.mean(rets) / np.std(rets, ddof=1)) * np.sqrt(periods_per_year) \
-    if rets.std(ddof=1) != 0 else np.nan
+symbols = ['AAVE']
 
-# ─── Print report ──────────────────────────────────────────────────────────────
-print(f"Initial cash:    ${initial_cash:,.2f}")
-print(f"Final cash:      ${cash:,.2f}")
-print(f"Total return:    {total_return:.2f}%")
-print(f"Trades:          {num_trades}")
-print(f"Win rate:        {win_rate:.1f}%")
-print(f"Max drawdown:    {max_drawdown:.2f}%")
-print(f"Sharpe ratio:    {sharpe_ratio:.2f}")
+results = []
+
+for sym in symbols:
+    # 1) load target
+    df_tgt = load_candles(sym, TIMEFRAME)
+
+    # 2) build anchor DataFrame
+    df_anc = pd.DataFrame({'timestamp': df_tgt['timestamp']})
+    for a in ANCHORS:
+        tmp = load_candles(a['symbol'], a['timeframe'])
+        col = f"close_{a['symbol']}_{a['timeframe']}"
+        df_anc = df_anc.merge(
+            tmp[['timestamp','close']].rename(columns={'close':col}),
+            on='timestamp', how='left'
+        )
+
+    # 3) PRECOMPUTE all pct-change + shift for every rule combo
+    pct_dict = {}
+    for r in BUY_RULES + SELL_RULES:
+        key = (r['symbol'], r['timeframe'], r['lag'])
+        col = f"close_{r['symbol']}_{r['timeframe']}"
+        pct_dict[key] = df_anc[col].pct_change().shift(r['lag']).to_numpy()
+
+    # 4) parameter sweep & backtest
+    for cp in np.arange(-10, 10.5, 0.5):
+        temp_buy = [{**r, 'change_pct': cp} for r in BUY_RULES]
+        sigs = generate_signals(df_anc, temp_buy, SELL_RULES, pct_dict)
+        df_run = df_tgt.merge(sigs, on='timestamp', how='left') \
+                       .fillna({'signal':'HOLD'})
+
+        # backtest & equity curve
+        initial_cash = 10_000.0
+        cash, position = initial_cash, 0.0
+        equity_curve = []
+        for _, row in df_run.iterrows():
+            price = row['open']
+            if row['signal']=="BUY" and position==0:
+                position = cash / price; cash = 0.0
+            elif row['signal']=="SELL" and position>0:
+                cash = position * price; position = 0.0
+            equity_curve.append(cash + position * price)
+
+        # final exit
+        if position>0:
+            final_price = df_run.iloc[-1]['close']
+            cash = position * final_price
+            equity_curve[-1] = cash
+            position = 0.0
+
+        # metrics
+        portfolio = np.array(equity_curve)
+        ret       = np.diff(portfolio) / portfolio[:-1]
+        sharpe    = (ret.mean() / ret.std(ddof=1)) * np.sqrt(8760) if ret.std(ddof=1)>0 else np.nan
+        running_max = np.maximum.accumulate(portfolio)
+        drawdowns   = (portfolio - running_max) / running_max
+        max_dd      = drawdowns.min() * 100
+
+        # trade stats
+        trades = []
+        cash2, pos2 = initial_cash, 0.0
+        for _, row in df_run.iterrows():
+            price = row['open']
+            if row['signal']=="BUY" and pos2==0:
+                pos2 = cash2 / price; cash2 = 0.0; trades.append(('B', price))
+            elif row['signal']=="SELL" and pos2>0:
+                cash2 = pos2 * price; pos2 = 0.0; trades.append(('S', price))
+        if pos2>0:
+            final_price = df_run.iloc[-1]['close']
+            cash2 = pos2 * final_price
+            trades.append(('E', final_price))
+
+        num_trades = len(trades)//2
+        wins       = sum(1 for i in range(1, len(trades), 2)
+                         if trades[i][1] > trades[i-1][1])
+        win_rate   = wins / num_trades * 100 if num_trades>0 else 0
+
+        results.append({
+            "Symbol":        sym,
+            "cp":            cp,
+            "Initial cash":  initial_cash,
+            "Final cash":    cash,
+            "Total return":  (cash - initial_cash) / initial_cash * 100,
+            "Trades":        num_trades,
+            "Win rate":      win_rate,
+            "Sharpe ratio":  sharpe,
+            "Max drawdown":  max_dd,
+            "BTC_cp":        cp,
+            "ETH_cp":        cp,
+            "SOL_cp":        cp
+        })
+
+# 5) save all results
+pd.DataFrame(results).to_csv(RESULTS_FILE, index=False)
+print(f"✅ Results written to {RESULTS_FILE}")
+
+end_time = time.time()
+print(f"⏱ Total processing time: {end_time - start_time:.2f} seconds")
+
+# Not using Iloc
+# ⏱ Total processing time: 20.36 seconds
+
+# using Iloc
+# ⏱ Total processing time: 171.85 seconds
+
+
+
+# ⏱ Total processing time: 2196.06 seconds

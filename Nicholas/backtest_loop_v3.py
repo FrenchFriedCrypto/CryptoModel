@@ -6,7 +6,7 @@ import pandas as pd
 # ========== CONFIGURATION (EDIT THIS SECTION ONLY) ==========
 TIMEFRAME    = "1H"           # timeframe suffix on your Data/*.csv files
 DATA_DIR     = "../Data"      # folder containing SYMBOL_TIMEFRAME.csv
-RESULTS_FILE = "results_comparison.csv"
+RESULTS_FILE = "results_comparison_old.csv"
 
 # Anchor definitions & rules
 ANCHORS = [
@@ -78,11 +78,13 @@ def load_candles(symbol: str, timeframe: str) -> pd.DataFrame:
 # === MAIN LOOP ===
 start_time = time.time()
 
-symbols = [
-    f[:-len(f"_{TIMEFRAME}.csv")]
-    for f in os.listdir(DATA_DIR)
-    if f.endswith(f"_{TIMEFRAME}.csv")
-]
+# symbols = [
+#     f[:-len(f"_{TIMEFRAME}.csv")]
+#     for f in os.listdir(DATA_DIR)
+#     if f.endswith(f"_{TIMEFRAME}.csv")
+# ]
+
+symbols = ['AAVE']
 
 results = []
 

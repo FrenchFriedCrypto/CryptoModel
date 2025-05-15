@@ -1,4 +1,5 @@
 import os
+import time
 import numpy as np
 import pandas as pd
 
@@ -85,12 +86,16 @@ def generate_signals(df_anc: pd.DataFrame,
 
 # === MAIN LOOP ===
 
+start_time = time.time()
+
 # find all target symbols in DATA_DIR
-symbols = [
-    f[:-len(f"_{TIMEFRAME}.csv")]
-    for f in os.listdir(DATA_DIR)
-    if f.endswith(f"_{TIMEFRAME}.csv")
-]
+# symbols = [
+#     f[:-len(f"_{TIMEFRAME}.csv")]
+#     for f in os.listdir(DATA_DIR)
+#     if f.endswith(f"_{TIMEFRAME}.csv")
+# ]
+
+symbols = ['AAVE']
 
 results = []
 
@@ -113,18 +118,12 @@ for sym in symbols:
     for r in BUY_RULES + SELL_RULES:
         key = (r['symbol'], r['timeframe'], r['lag'])
         col = f"close_{r['symbol']}_{r['timeframe']}"
-        # pct_change over the whole column, shifted by r['lag'], as a NumPy array
         pct_dict[key] = df_anc[col].pct_change().shift(r['lag']).to_numpy()
 
     # 4) parameter sweep & backtest
     for cp in np.arange(-10, 10.5, 0.5):
-        # override buy_rules thresholds
         temp_buy = [{**r, 'change_pct': cp} for r in BUY_RULES]
-
-        # generate signals (very fast now!)
         sigs = generate_signals(df_anc, temp_buy, SELL_RULES, pct_dict)
-
-        # merge signals into target candles
         df_run = df_tgt.merge(sigs, on='timestamp', how='left') \
                        .fillna({'signal':'HOLD'})
 
@@ -192,3 +191,16 @@ for sym in symbols:
 # 5) save all results
 pd.DataFrame(results).to_csv(RESULTS_FILE, index=False)
 print(f"✅ Results written to {RESULTS_FILE}")
+
+end_time = time.time()
+print(f"⏱ Total processing time: {end_time - start_time:.2f} seconds")
+
+# Not using Iloc
+# ⏱ Total processing time: 20.36 seconds
+
+# using Iloc
+# ⏱ Total processing time: 171.85 seconds
+
+
+
+# ⏱ Total processing time: 2196.06 seconds
