@@ -12,17 +12,17 @@ ANCHORS = [
     {"symbol": "BTC", "timeframe": "1H", "lag": 4},
     {"symbol": "ETH", "timeframe": "1H", "lag": 4},
     {"symbol": "SOL", "timeframe": "1H", "lag": 4},
-    {"symbol": "ETH", "timeframe": "1H", "lag": 0},
+    {"symbol": "ETH", "timeframe": "4H", "lag": 0},
 ]
 
 BUY_RULES = [
-    {"symbol": "BTC", "timeframe": "1H", "lag": 4, "change_pct": 3.0, "direction": "up"},
-    {"symbol": "SOL", "timeframe": "1H", "lag": 4, "change_pct": 3.0, "direction": "up"},
-    {"symbol": "ETH", "timeframe": "1H", "lag": 4, "change_pct": 3.5, "direction": "up"}
+    {"symbol": "BTC", "timeframe": "1H", "lag": 4, "change_pct": -10.0, "direction": "down"},
+    {"symbol": "ETH", "timeframe": "1H", "lag": 4, "change_pct": -10.0, "direction": "down"},
+    {"symbol": "SOL", "timeframe": "1H", "lag": 4, "change_pct": -10.0, "direction": "down"},
 ]
 
 SELL_RULES = [
-    {"symbol": "ETH", "timeframe": "4H", "lag": 0, "change_pct": -3.0, "direction": "down"},
+    {"symbol": "ETH", "timeframe": "1H", "lag": 0, "change_pct": -2.0, "direction": "down"},
 ]
 
 # ========== STRATEGY ENGINE (DO NOT EDIT BELOW) ==========
