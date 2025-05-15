@@ -16,8 +16,15 @@ def process_data_for_symbol(host_url, symbol, interval, output_folder):
     def to_ms(dt: datetime) -> int:
         return int(dt.timestamp() * 1000)
 
-    # CSV file path
-    csv_file_path = os.path.join(output_folder, f'{symbol}.csv')
+    # Strip USDT suffix for the base name
+    if symbol.endswith("USDT"):
+        base_symbol = symbol[:-4]
+    else:
+        base_symbol = symbol
+
+    # Build the filename with uppercase interval
+    filename = f"{base_symbol}_{interval.upper()}.csv"
+    csv_file_path = os.path.join(output_folder, filename)
 
     # Determine where to start from
     if os.path.exists(csv_file_path) and os.path.getsize(csv_file_path) > 0:
@@ -26,6 +33,7 @@ def process_data_for_symbol(host_url, symbol, interval, output_folder):
         current_date = datetime.fromtimestamp(last_ts / 1000, tz=timezone.utc)
         print(f"Resuming {symbol} from {current_date.isoformat()} (ts={last_ts})")
     else:
+        # start from 1 Jan 2025 UTC
         current_date = datetime.strptime("01/01/25", "%d/%m/%y").replace(tzinfo=timezone.utc)
         last_ts = to_ms(current_date)
         print(f"Starting {symbol} from {current_date.isoformat()} (ts={last_ts})")
@@ -98,7 +106,6 @@ def process_data_for_symbol(host_url, symbol, interval, output_folder):
                 last_ts = float(final_arr[-1][0])
             else:
                 print(f"  [!] No new rows for {symbol} in this batch")
-
         else:
             print(f"  [!] Empty data for {symbol} between {current_date} and {next_date}")
 
@@ -111,6 +118,7 @@ def read_and_clean_csv(filepath):
     df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
     return df
 
+
 def process_csv_files(folder_path):
     for fn in os.listdir(folder_path):
         if fn.endswith(".csv"):
@@ -119,40 +127,45 @@ def process_csv_files(folder_path):
             df = read_and_clean_csv(path)
             df.to_csv(path, index=False)
 
+
 # ──── Main ─────────────────────────────────────────────────────────────────
 
-host = "https://api.binance.com"
-# host = "https://api1.binance.com"
-# host = "https://api2.binance.com"
-# host = "https://api3.binance.com"
-# host = "https://api4.binance.com"
+if __name__ == "__main__":
+    host = "https://api.binance.com"
+    # host = "https://api1.binance.com"
+    # host = "https://api2.binance.com"
+    # host = "https://api3.binance.com"
+    # host = "https://api4.binance.com"
+    prefix = "/api/v3/klines"
+    host_url = host + prefix
 
-prefix = "/api/v3/klines"
-host_url = host + prefix
+    intervals = ['1d']  # you can add other intervals here
+    days_gap_mapping = {
+        '1m': 1000, '3m': 2,   '5m': 3,   '15m': 10,
+        '30m': 20,  '1h': 40,  '2h': 80,  '4h': 160,
+        '6h': 240,  '8h': 330, '12h': 450,'1d': 1000,
+        '3d': 3000,'1w': 3000,'1M': 3000
+    }
 
-intervals = ['1d']
-days_gap_mapping = {
-    '1m': 1000, '3m': 2, '5m': 3, '15m': 10, '30m': 20,
-    '1h': 40, '2h': 80, '4h': 160, '6h': 240, '8h': 330,
-    '12h': 450, '1d': 1000, '3d': 3000, '1w': 3000, '1M': 3000
-}
+    # All data files go into this single folder
+    data_folder = "Data"
+    os.makedirs(data_folder, exist_ok=True)
 
-for interval in intervals:
-    days_gap = days_gap_mapping.get(interval, 1000)
-    output_folder = f"{interval}_binance"
-    os.makedirs(output_folder, exist_ok=True)
-
-    # read your symbols list
+    # Read your symbols list
     with open('Symbols/spot_binance_symbols.csv', 'r') as f:
-        symbols = [row[0] for row in csv.reader(f)]
+        symbols = [row[0].strip() for row in csv.reader(f)]
 
-    print(f"\n=== Interval: {interval} ===")
-    for symbol in symbols:
-        try:
-            process_data_for_symbol(host_url, symbol, interval, output_folder)
-        except Exception as e:
-            print(f"Error on {symbol}: {e}")
-            continue
+    for interval in intervals:
+        # set the global days_gap for the fetch function
+        days_gap = days_gap_mapping.get(interval, 1000)
+        print(f"\n=== Interval: {interval.upper()} ===")
 
-    # optional: clean up afterwards
-    # process_csv_files(output_folder)
+        for symbol in symbols:
+            try:
+                process_data_for_symbol(host_url, symbol, interval, data_folder)
+            except Exception as e:
+                print(f"Error on {symbol}: {e}")
+                continue
+
+    # If you want to clean up the CSVs afterwards:
+    # process_csv_files(data_folder)
