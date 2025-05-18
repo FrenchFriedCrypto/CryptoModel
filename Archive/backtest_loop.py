@@ -4,7 +4,7 @@ import pandas as pd
 # ========== CONFIGURATION (EDIT THIS SECTION ONLY) ==========
 
 TIMEFRAME       = "1H"         # timeframe suffix on your Data/*.csv files
-DATA_DIR        = "../Data"       # folder containing SYMBOL_TIMEFRAME.csv
+DATA_DIR        = "../Data"  # folder containing SYMBOL_TIMEFRAME.csv
 RESULTS_FILE    = "results_comparison.csv"
 
 # Anchor definitions & rules (unchanged)
