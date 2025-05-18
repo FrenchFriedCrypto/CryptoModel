@@ -34,7 +34,7 @@ def process_data_for_symbol(host_url, symbol, interval, output_folder):
         print(f"Resuming {symbol} from {current_date.isoformat()} (ts={last_ts})")
     else:
         # start from 1 Jan 2025 UTC
-        current_date = datetime.strptime("01/01/25", "%d/%m/%y").replace(tzinfo=timezone.utc)
+        current_date = datetime.strptime("01/05/24", "%d/%m/%y").replace(tzinfo=timezone.utc)
         last_ts = to_ms(current_date)
         print(f"Starting {symbol} from {current_date.isoformat()} (ts={last_ts})")
 
@@ -139,7 +139,7 @@ if __name__ == "__main__":
     prefix = "/api/v3/klines"
     host_url = host + prefix
 
-    intervals = ['1d']  # you can add other intervals here
+    intervals = ['1d', '1h', '4h']  # you can add other intervals here
     days_gap_mapping = {
         '1m': 1000, '3m': 2,   '5m': 3,   '15m': 10,
         '30m': 20,  '1h': 40,  '2h': 80,  '4h': 160,

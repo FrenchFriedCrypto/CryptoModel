@@ -51,7 +51,7 @@ def main():
         {
             'inBal': 10000, 'finalBal': 20000,
             'mean_return': 0.06, 'std_dev_return': 0.03,
-            'high_w': 22000, 'dd': 20000
+            'high_w': 22000, 'dd': 19000
         },
     ]
 
