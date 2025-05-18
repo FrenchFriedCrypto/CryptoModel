@@ -1,0 +1,9 @@
+
+Group By
++ve change vs -ve change
+
+Negative Entry_cp: 1962 out of 7320, or 26.80%
+Positive Entry_cp: 11745 out of 21960, or 53.48%
+
+Positive breakout favours stronger correlation, slightly above average
+
